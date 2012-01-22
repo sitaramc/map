@@ -1,0 +1,328 @@
+#!/usr/bin/perl
+use 5.10.0;
+use strict;
+use warnings;
+
+# for caveats see usage message
+
+# ----------------------------------------------------------------------
+
+use Getopt::Long;
+my ( $help, $verbose, $quiet, $procs, $maxargs, $delim );
+GetOptions(
+    "help|h|?"      => \$help,       # this help text
+    "verbose|v"     => \$verbose,    # prints commands as they execute
+    "quiet|q"       => \$quiet,      # doesn't print abnormal child exit warnings
+    "max-procs|p:i" => \$procs,      # parallel mode
+    "max-args|n=i"  => \$maxargs,    # max N arguments per invocation
+    "delimiter|d:s" => \$delim       # delimiter mode
+) or die "option error; please run with '-h' for help\n";
+
+# TODO:
+# -t: trim leading and trailing blanks
+# -ts: timestamps on reporting each run (not compat with -p, sorry)
+
+die "you must be crazy..." if $quiet and $verbose;
+
+if ( defined($procs) and not $procs ) {
+    try("cat /proc/cpuinfo | grep ^processor") or die "-p needs a number";
+    $procs = scalar( lines() );
+}
+
+$delim = " " if ( defined($delim) and not $delim );
+$delim = "\t" if ( defined($delim) and $delim eq 't' );
+
+usage() if $help or not @ARGV;    # exits;
+
+# ----------------------------------------------------------------------
+
+# globals
+
+my $MAXLEN = 60000;
+
+# ----------------------------------------------------------------------
+
+# determine what the command is and what the arguments are
+my ( @cmd, @args );
+sub cmd { return join( " ", @cmd ); }
+
+if ( -t 0 ) {
+    # stdin is a tty, so he just typed in 'map [options] cmd arglist'. However
+    # in this case the command may itself need splitting first.
+    @cmd = split( ' ', shift() );
+    die "I need args or STDIN" unless @ARGV;
+    die "'-d' mode needs STDIN" if $delim;
+    @args = @ARGV; @ARGV = ();
+} else {
+    # stdin contains arguments so the full command is in ARGV
+    @cmd = @ARGV; @ARGV = ();
+    # leave @args empty for now...
+}
+sane(@cmd) or die "bad command";    # TODO better message
+
+# add a default placeholder (% if -p, else %%)
+push @cmd, ( ( $procs and not $maxargs ) ? "%" : "%%" ) unless @cmd ~~ /%/;
+
+if (@args) {
+    # the '-t 0' case
+    for my $arg (@args) {
+        build($arg);
+    }
+} else {
+    # the args on stdin case
+    while ( my $arg = <> ) {
+        chomp($arg);
+        build($arg);
+    }
+}
+build();    # you may have something left over
+
+# very rudimentary sanity check
+sub sane {
+    my @cmd = @_;
+    return 0 if ( @cmd ~~ /%%/ and @cmd ~~ /(?<!%)%(?!%)/ );
+    return 1;
+}
+
+sub build {
+    state @gencmd;
+    state $nargs = 0;
+
+    if ( not @_ or length( join( " ", @gencmd ) ) > $MAXLEN or ( $maxargs and $nargs >= $maxargs ) ) {
+        # flush it
+        return unless @gencmd;    # maybe already flushed or not even in %% mode
+        sys(@gencmd);
+        @gencmd = (); $nargs = 0;
+    }
+    return if not @_;
+
+    my ($arg) = shift;
+
+    @gencmd = @cmd unless @gencmd;
+
+    if ( @gencmd ~~ /%%/ ) {
+        @gencmd = insert( $arg, @gencmd );
+    } elsif ( @gencmd ~~ /%[1-9]/ ) {
+        die "%[1-9] not allowed unless '-d' option used" unless $delim;
+        @gencmd = replace_delim( $arg, @gencmd );
+    } elsif ( @gencmd ~~ /%/ ) {
+        @gencmd = replace( $arg, @gencmd );
+    }
+
+    $nargs++;
+
+    return if @gencmd ~~ /%%/;    # we can't execute yet
+
+    sys(@gencmd);
+    @gencmd = (); $nargs = 0;
+}
+
+sub insert {
+    my $arg = shift;
+    my ( $f, $d, $b, $e ) = split_path($arg);
+
+    local @_ = @_;                # this is @gencmd
+    my @ret;
+
+    for my $_ (@_) {
+        unless (/%%/) {
+            push @ret, $_;
+            next;
+        }
+
+        # now this word in the command string has a %%.  Doesn't matter what
+        # kind, or even if it's more than one kind -- it needs to be
+        # substituted, and then the raw form replicated for the next cycle
+
+        my $raw = $_;    # save the raw form of the word
+        s/%%D/$d/g;
+        s/%%B/$b/g;
+        s/%%E/$e/g;
+        s/%%/$f/g;
+
+        push @ret, $_, $raw;
+    }
+
+    return @ret;
+}
+
+sub replace {
+    my $arg = shift;
+    my ( $f, $d, $b, $e ) = split_path($arg);
+
+    local @_ = @_;    # this is @gencmd
+    my @ret;
+
+    for my $_ (@_) {
+        unless (/%/) {
+            push @ret, $_;
+            next;
+        }
+
+        s/%D/$d/g;
+        s/%B/$b/g;
+        s/%E/$e/g;
+        s/%/$f/g;
+
+        push @ret, $_;
+    }
+
+    return @ret;
+}
+
+sub replace_delim {
+    my $arg = shift;
+    my @fields;
+
+    if ( $delim eq " " ) {
+        @fields = split ' ', $arg;
+        # the "special" properties don't work unless it's a literal space
+    } else {
+        @fields = split $delim, $arg;
+    }
+
+    local @_ = @_;    # this is @gencmd
+    my @ret;
+
+    for my $_ (@_) {
+        unless (/%/) {
+            push @ret, $_;
+            next;
+        }
+
+        s/%(\d+)/$fields[$1-1]/ge;
+
+        push @ret, $_;
+    }
+
+    return @ret;
+}
+
+sub sys {
+    my @cmd = @_;
+    return unless @cmd;
+    @cmd = grep { not /%%/ } @cmd;
+
+    my $cmd = join( " ", @cmd );
+
+    state $xargs = '';
+
+    if ($procs) {
+        if ( not $xargs ) {
+            open( XARGS, "|-", "xargs", "-P", $procs, "-I", "%", "sh", "-c", "%" )
+              or die "open pipe to xargs failed";
+            say STDERR "|: xargs -P $procs -I % sh -c %" if $verbose;
+            $xargs++;
+        }
+        say STDERR "X: ", $cmd if $verbose;
+        say XARGS $cmd;
+        # say $cmd if not -t 1;
+        return;
+    }
+
+    my $rc;
+    if ( @cmd ~~ /[~$&*\[\]<>|;]/ ) {   # XXX these characters may need change
+        say STDERR "J: ", $cmd if $verbose;
+        $rc = system($cmd);
+    } else {
+        say STDERR "+ ", $cmd if $verbose;
+        $rc = system(@cmd);
+    }
+
+    if ( $? == -1 ) {
+        die "F: failed to execute: $!\n";
+    } elsif ( $? & 127 ) {
+        printf STDERR "E: child died with signal %d\n", ( $? & 127 );
+    } elsif ($quiet) {
+        # no more reporting
+    } else {
+        printf STDERR "W: child exited with value %d\n", $? >> 8 if $? >> 8;
+    }
+}
+
+sub split_path {
+    my $_ = shift;
+    s(/$)();    # remove irritating trailing slash if present
+    my $f = $_;
+    my ( $d, $b, $e ) = ('') x 3;
+    $d = $1 if s(^(.*)/)();
+    ( $b, $e ) = ( $1, $2 ) if m(^(.*)\.([^.]+)$);
+    $b ||= $_;
+
+    $d = '.' unless $d;
+    return ( $f, $d, $b, $e );
+}
+
+# ----------------------------------------------------------------------
+
+sub usage {
+    # I don't like POD.  This is not up for discussion.
+
+    say "
+map -- making xargs simpler *and* more powerful at the same time!
+";
+
+    @ARGV = ($0);
+    while (<>) {
+        next unless /^\s*GetOptions/ .. /^\s*\)/;
+        next if /^\s*GetOptions/ or /^\s*\)/;
+
+        my $op = '';
+        if (/"(.*?)"/) {
+            $op = "  " . join( ", ", map { s/[=:][sif]$//; /../ ? "--$_" : "-$_" } split /\|/, $1 );
+            print $op;
+        }
+        print( " " x ( 30 - length($op) ) );
+
+        s/.*#/#/;
+        print;
+    }
+
+    say "
+WARNINGS:
+  - do not mix %% with %
+  - do not use with commands that genuinely require the '%' sign; at present
+    there is no 'escaping' such % signs.
+  - if your filenames are not shell clean, don't use '-p', and be prepared to
+    play with the quoting to get redirection or multiple commands to work.
+
+Please see documentation for more, especially differences from xargs.
+";
+
+    exit 1;
+}
+
+# ----------------------------------------------------------------------
+
+# bare-minimum subset of 'Tsh' (see github.com/sitaramc/tsh)
+{
+    my ( $rc, $text );
+    sub rc   { return $rc   || 0; }
+    sub text { return $text || ''; }
+    sub lines { return split /\n/, $text; }
+
+    sub try {
+        my $cmd = shift; die "try: expects only one argument" if @_;
+        $text = `( $cmd ) 2>&1; echo -n RC=\$?`;
+        if ( $text =~ s/RC=(\d+)$// ) {
+            $rc = $1;
+            return ( not $rc );
+        }
+        die "couldnt find RC= in result; this should not happen:\n$text\n\n...\n";
+    }
+
+    sub run {
+        open( my $fh, "-|", @_ ) or die "tell sitaram $!";
+        local $/ = undef; $text = <$fh>;
+        close $fh; warn "tell sitaram $!" if $!;
+        $rc = ( $? >> 8 );
+        return $text;
+    }
+}
+
+sub dbg {
+    use Data::Dumper;
+    for my $i (@_) {
+        print STDERR "DBG: " . Dumper($i);
+    }
+}
