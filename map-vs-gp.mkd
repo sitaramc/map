@@ -1,0 +1,212 @@
+# F=mapgp map versus GNU parallel
+
+Here's a feature comparision of map versus GNU parallel, mostly using examples
+in their [man page](http://www.gnu.org/software/parallel/man.html).
+
+Before we get started, note that `map` has an additional feature that GNU
+parallel doesn't have (and maybe was never meant to have, but I think it is
+very relevant); see "delimiter mode" in the main documentation.
+
+I got tired of trying these examples at about half way through their list.
+The examples were getting more and more "kitchen sink"-ish (I mean, an option
+called '--return' to get back a file from a remote computer?  I know "GNU is
+Not Unix" but this is too much!)
+
+It is also clear to me that for most common uses, something with only 3
+options, which seems to match almost all the examples upto the halfway point
+of a large set of them, is a neat thing to have.
+
+----
+
+(Note: we're omitting the examples that talk about spaces in filenames, using
+the null character, etc., because I didn't have the energy to test them
+rigorously).
+
+First we create test data:
+
+    seq 1 10 | map -p 3 dd if=/dev/urandom bs=1M count=20 of=test-%.in
+
+That creates 10 files, 3 at a time.
+
+**Example: parallel gzip**
+
+    ls *.in | map -p 5 gzip
+    # default % added at the end due to '-p'
+
+They both run 5 jobs at the same time, each with one argument.  You can do
+them in other ways:
+
+**Example: reading arguments from command line**
+
+No special syntax is required for this.  If STDIN is a tty, map's idea of what
+is the command and what are its arguments changes:
+
+    map -p 3 -n 3 gzip *.in
+    # default back to %% due to '-n'
+
+This will pick up 3 arguments per job, 3 jobs in parallel.
+
+**Example: Inserting multiple arguments**
+
+As you saw in the "%" and "%%" comments above, inserting multiple arguments is
+just using %% instead of %:
+
+    ls *.in | map mv %% DESTDIR
+
+**Example: context replace**
+
+Again, we dont need all this extra syntax, so (using echo instead of rm for
+testing):
+
+    seq 1 10 | map echo test-%.in
+
+which runs 10 individual jobs like their first example, and
+
+    seq 1 10 | map echo test-%%.in
+
+will run in one shot, and if you changed that 10 to 5000 or something it will
+separate them when the command length has grown beyond 60,000 characters.
+
+**Compute intensive jobs and substitution**
+
+Keeping the basic structure of his commands, we'll do this.
+
+First we take out 10 test data files and move some of them into
+subdirectories:
+
+    mkdir aa bb bb/cc
+    mv *10* aa; mv *5* bb; mv *2* *4* bb/cc
+
+Now the find example:
+
+    find . -name '*.in' | map -p dd if=% of=%D/%B_swabbed.in conv=swab
+
+As you can see, we use %D etc instead of their `{.}`.  In fact, our `%` is
+always exactly the same as `%D/%B.%E` (directory, basename, extension).
+
+**Substitution and redirection**
+
+First I gzip the existing files to provide the input to this step, then:
+
+    map -p "zcat % > %B" *.gz
+
+**Example: composed commands**
+
+    ls | map -- 'echo -ne %"\t"; ls %|wc -l'
+
+    ls   | map -- '( echo -ne %"\t"; ls %|wc -l ) > %.dir'
+
+I didn't do the next 2; they seemed boring and not really clean.  The URLs one
+was nice, but why waste all that bandwidth (and also needlessly write the damn
+files to disk)?
+
+    cat urls |map -p 'HEAD % &>/dev/null || grep -n % urls'
+
+I skipped the mirror files one, but here's the one about files in a list that
+do not exist:
+
+    cat files | map -p '[ -e % ] || echo %'
+
+**Example: removing file extension...**
+
+    ls *.zip | map -p 'mkdir %B; cd %B; unzip -q ../%'
+
+    map -p 'zcat % |bzip2 > %B.bz2 && rm %' *.gz
+
+**Example: remove 2 file extensions, calling map from itself**
+
+    ls -d *.tar.gz | map echo %B | map -v 'mkdir %B; tar -xf %.gz'
+
+**Example: download 10 images for past 30 days**
+
+It's basically doing a loop within a loop.  Seems like a built-in operation at
+some level in GNU parallel but we can do it too.  We'll do it with an 'echo'
+instead of 'wget':
+
+    seq 30 | map 'seq -w 10 | map -n 1 -- echo today -%, picture'
+
+The first seq puts out a number that replaced the sole '%' sign in the whole
+map, while the second has an implicit '%' at the end due to the '-n 1'.
+
+**Example: Rewriting a for-loop and a while...**
+
+pretty trivial; there are many examples earlier.  In the vein of their
+example:
+
+    cat list | map -p 'do1 % scale %B.jpg; do2 < % %B'
+
+**Example: Rewriting nested-for loops**
+
+See earlier example "download 10 images..." -- you can use the same solution
+here.  As I said there, GNU parallel seems to have special syntax for this; we
+actually pipe a map to another one.
+
+**Example: Group output lines**
+
+We can't do this.  Without explicit redirection of some kind we may never be
+able to.  This is because we get our parallelism using xargs.
+
+(Also the next 2 examples)
+
+**Example: parallel grep**
+
+Easy enough to do; but it doesn't make sense to me to parallelise something
+that will be IO-bound anyway; in all my tests it comes out slower to do this.
+
+**Example: using remote computers**
+
+...nope, we can't do it!
+
+**Example: run the same command 10 times**
+
+force it to go through xargs and put in a comment character after the command
+you want:
+
+    seq 10 | map -p 1 cmd \# boo
+
+**Example: working as cat|sh**
+
+    cat cmdlist | map -p 100 -- %
+
+## #cantwont things that map cannot/will not do
+
+(this is only from the examples list; I haven't read the full options list,
+reasoning that if an option were indispensable they'd have an example for it
+anyway)
+
+  * see note above on filenames with unusual characters.  The big thing you
+    lose is parallelism when dealing with such.
+
+  * map can't do "group output" when running parallelly.  You can use some
+    tricks if you really need it, like:
+
+        ... | map -p 4 'some-cmd % 2>&1 | sed -e "s/^/$$:/"' | sort | cut -f2- -d:
+
+    I don't need this feature enough to do more than that.
+
+    Besides, according to their manpage this takes a lot of CPU (why???),
+    compared to not grouping the output.  My workaround clearly doesn't --
+    unless the output is too big for sort I suppose.
+
+  * same for "tagging output lines", and "keeping order ... the same ...",
+    although the latter is also achieved by the previous workaround.
+
+  * map can't handle multiple inputs in one command.  However, their example
+    is easy enough with map's "delimiter mode":
+
+        ls *.tar.* | perl -ne 'chomp; print; s/\.tar//; print " $_\n"' | map -d -- cp %1 %2
+
+    As you can see, there was no need to put the inputs into separate files
+    anyway.  If I find a genuine need I'll think about it...
+
+  * map can't spread STDIN breadthwise among the available jobs, nor split the
+    data into chunks to spread.
+
+  * **NO KITCHEN SINK**
+
+      * no '--sshlogin' to login to remote computers
+      * no '--transfer' to transfer files
+      * *definitely* no '--return' to get those files back
+      * no '--cleanup'
+      * *definitely* no '--trc' as shorthave for previous 3, heh!
+      * and last but not least, we're not a 'semaphore' program!

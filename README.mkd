@@ -1,0 +1,4 @@
+# map -- making xargs simpler and more powerful
+
+Pre-rendered online documentation is
+[here](http://sitaramc.github.com/map/map.html).
