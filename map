@@ -221,7 +221,7 @@ sub sys {
     }
 
     my $rc;
-    if ( @cmd ~~ /[~$&*\[\]<>|;]/ ) {   # XXX these characters may need change
+    if ( @cmd ~~ /[~\$&*\[\]<>|;]/ ) {   # XXX these characters may need change
         say STDERR "J: ", $cmd if $verbose;
         $rc = system($cmd);
     } else {
