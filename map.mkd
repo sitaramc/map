@@ -39,41 +39,54 @@ expect, if you need to refresh your memory.
 'map' is like xargs in many ways, except for having very few options, and a
 fixed set of "replace strings", all using the `%` character.
 
-The **biggest difference**, conceptually, is that map will treat each input
-line as one single argument and does not space-separate them again.  This
-makes it usable by default for filenames with spaces etc (although please see
-the IMPORTANT NOTES section later for details).
+Here are the highlights:
 
-The second difference is that `map` will happily treat the first argument as
-the command and the rest as input "lines" if STDIN is a tty, so you can say
-things like:
+  * map will treat each input line as one single argument; it will not
+    space-separate them like xargs does.
 
-    map gzip *.pdf
+    This makes it usable by default for filenames with spaces etc (but please
+    see the IMPORTANT NOTES section later for details).
 
-or
+  * map's **replace strings** are `%` and `%%`.  A single % means substitute
+    exactly one input item and run the command, while a double % means to
+    substitute as many input items as possible (subject to '-n' and total
+    command length) before running the command (like xargs).
 
-    map "zip -q -r % %" src doc conf contrib hooks
+    See later for defaults if you don't specify them, as well as the D, B, and
+    E modifiers.
 
-The third difference is that map also has a pretty cool "delimiter
-mode" that at first seems totally unrelated to xargs but actually is not.
-There are a couple of examples later.
+  * map will happily treat the first argument as the command and the rest as
+    input "lines" if STDIN is not a pipe.  This lets you do things like this:
+
+        map gzip *.pdf
+        # same as: ls *.pdf | map gzip
+
+    or, using quotes for the first argument:
+
+        map "zip -q -r % %" src doc conf contrib hooks
+        # same as: \ls -d src doc conf contrib hooks | map zip -q -r % %
+
+  * map also has a pretty cool "delimiter mode" that at first seems totally
+    unrelated to xargs but actually is not.  See later for examples.
 
 ## default replacement string
 
-For quick reference, here are the defaults if no '%' sign exists anywhere in
-the command.  See the next section(s) for what '%' and '%%' mean.
+If no replacement string (%, %%, or variants) exist anywhere in the command,
+the default is to assume a '%%' at the end.
 
-Normally a '%%' is assumed to be appended to the end.  If the `-p` option is
-used without the `-n` option, then this changes to a single '%'.
+However, if the '-p' option is used *without* the '-n' option, the default
+becomes '%'.
 
-## single replacements
+## details
+
+### single replacements
 
 `%` is replaced by the current input line, with a trailing slash removed if
 present.  `%D` is replaced by the directory name of the current filename.
 `%B` is the basename and `%E` is the extension.  (This means that `%` is
 pretty much equal to `%D/%B.%E`).
 
-These replacements use only one input line per run, so
+As said above, these replacements use only one input line per run, so
 
     seq 1 3 | map echo %
 
@@ -83,9 +96,9 @@ gives you
     2
     3
 
-## multiple replacements
+### multiple replacements
 
-However, most often, you want all the arguments tacked on to one "run" of the
+Most often, you want all the arguments tacked on to one "run" of the
 the command.  Do this by specifying a `%%`:
 
     seq 1 3 | map echo %%
@@ -114,12 +127,11 @@ produces
 
     abc-1-def abc-2-def abc-3-def
 
-## multiple jobs in parallel
+### multiple jobs in parallel
 
 When you run something like:
 
     map -p 4 gzip *.pdf
-    # yes, it doesn't have to be of the form 'ls *.pdf | map -p 4 gzip'!
 
 you are running 4 jobs in parallel.  This indicates that the job might be CPU
 bound (usually, though not always) so it's best to run each job on one input
@@ -128,7 +140,7 @@ line rather than give it as many as it will take.
 So when you run in parallel mode, the default is `%` because that is what
 makes sense.
 
-## specifying maximum arguments per invocation
+### specifying maximum arguments per invocation
 
 However, if you use `-n`, (even if you are also using `-p`) the default
 switches back to `%%`.  The logic is that specifying "maximum arguments per
@@ -140,7 +152,7 @@ to remember.
 
 And if in doubt you can always specify what you want you know...
 
-## delimiter mode
+### delimiter mode
 
 Here's an example; more documentation may follow if anyone asks but notice the
 delimiter character (colon) and the specification of field 1 and field 7:
@@ -157,7 +169,7 @@ field:
 
 ## IMPORTANT NOTES
 
-**Filenames with unusual characters**
+### Filenames with unusual characters
 
 Map **will** work fine with such filenames **except that** you have to do some
 extra quoting for parallel mode (since that invokes xargs), or if you want to
@@ -175,7 +187,7 @@ but this will succeed:
 (by the way, this computes the size of the gzipped file as a percentage of the
 original)
 
-**OTHER WARNINGS**
+### OTHER WARNINGS
 
   * never mix the 3 styles of replacement strings ('%' and its cousins, '%%'
     and its cousins, and '%1', '%2', etc for delimiter mode).  Odd things will
