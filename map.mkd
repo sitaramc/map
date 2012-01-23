@@ -159,9 +159,9 @@ field:
 
 **Filenames with unusual characters**
 
-Map **will** work fine with such filenames **except that** you cannot use
-parallel mode (since that invokes xargs).  You cannot also use redirection or
-multiple commands unless you provide your own quoting.
+Map **will** work fine with such filenames **except that** you have to do some
+extra quoting for parallel mode (since that invokes xargs), or if you want to
+use redirection or multiple commands.
 
 For example (assuming some command sending in a list of filenames), this will
 fail:

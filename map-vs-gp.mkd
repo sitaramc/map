@@ -5,18 +5,13 @@
 Here's a feature comparision of map versus GNU parallel, mostly using examples
 in their [man page](http://www.gnu.org/software/parallel/man.html).
 
-Before we get started, note that `map` has an additional feature that GNU
-parallel doesn't have (and maybe was never meant to have, but I think it is
-very relevant); see "delimiter mode" in the main documentation.
-
 I got tired of trying these examples at about half way through their list.
 The examples were getting more and more "kitchen sink"-ish (I mean, an option
 called '--return' to get back a file from a remote computer?  I know "GNU is
 Not Unix" but this is too much!)
 
-It is also clear to me that for most common uses, something with only 3
-options, which seems to match almost all the examples upto the halfway point
-of a large set of them, is a neat thing to have.
+It seems to match almost all the examples upto the halfway point of their set,
+despite having only 3 options to remember, compared to almost a 100.
 
 ## detailed list of examples
 
@@ -176,8 +171,9 @@ you want:
 reasoning that if an option were indispensable they'd have an example for it
 anyway)
 
-  * see note above on filenames with unusual characters.  The big thing you
-    lose is parallelism when dealing with such.
+  * see note above on filenames with unusual characters.  You do need to do
+    some extra quoting if you want to use parallel mode or compound/shell
+    commands.
 
   * map can't do "group output" when running parallelly.  You can use some
     tricks if you really need it, like:

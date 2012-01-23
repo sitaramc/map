@@ -283,8 +283,8 @@ WARNINGS:
   - do not mix %% with %
   - do not use with commands that genuinely require the '%' sign; at present
     there is no 'escaping' such % signs.
-  - if your filenames are not shell clean, don't use '-p', and be prepared to
-    play with the quoting to get redirection or multiple commands to work.
+  - if your filenames are not shell clean, be prepared to play with the
+    quoting to get '-p' or redirection or multiple commands to work.
 
 Please see documentation for more, especially differences from xargs.
 ";
