@@ -177,10 +177,6 @@ original)
 
 **OTHER WARNINGS**
 
-  * you may need to use `--` to separate map's options from it's command if
-    the command also has options.  Map's option parsing is rather greedy (it's
-    on my todo list to fix this).
-
   * never mix the 3 styles of replacement strings ('%' and its cousins, '%%'
     and its cousins, and '%1', '%2', etc for delimiter mode).  Odd things will
     happen -- I don't check for sanity.

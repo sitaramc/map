@@ -89,9 +89,9 @@ First I gzip the existing files to provide the input to this step, then:
 
 **Example: composed commands**
 
-    ls | map -- 'echo -ne %"\t"; ls %|wc -l'
+    ls | map 'echo -ne %"\t"; ls %|wc -l'
 
-    ls   | map -- '( echo -ne %"\t"; ls %|wc -l ) > %.dir'
+    ls | map '( echo -ne %"\t"; ls %|wc -l ) > %.dir'
 
 I didn't do the next 2; they seemed boring and not really clean.  The URLs one
 was nice, but why waste all that bandwidth (and also needlessly write the damn
@@ -120,7 +120,7 @@ It's basically doing a loop within a loop.  Seems like a built-in operation at
 some level in GNU parallel but we can do it too.  We'll do it with an 'echo'
 instead of 'wget':
 
-    seq 30 | map 'seq -w 10 | map -n 1 -- echo today -%, picture'
+    seq 30 | map 'seq -w 10 | map -n 1 echo today -%, picture'
 
 The first seq puts out a number that replaced the sole '%' sign in the whole
 map, while the second has an implicit '%' at the end due to the '-n 1'.
@@ -163,7 +163,7 @@ you want:
 
 **Example: working as cat|sh**
 
-    cat cmdlist | map -p 100 -- %
+    cat cmdlist | map -p 100 %
 
 ## #cantwont things that map cannot/will not do
 
