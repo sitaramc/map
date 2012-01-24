@@ -208,3 +208,7 @@ anyway)
       * no '--cleanup'
       * *definitely* no '--trc' as shorthave for previous 3, heh!
       * and last but not least, we're not a 'semaphore' program!
+
+  * **NO VIDEOS TO SHOW OFF ITS FEATURES**
+
+    (sorry, couldn't resist!)
