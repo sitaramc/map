@@ -212,6 +212,7 @@ sub sys {
         if ( not $xargs ) {
             open( XARGS, "|-", "xargs", "-P", $procs, "-I", "%", "sh", "-c", "%" )
               or die "open pipe to xargs failed";
+            select XARGS; $|++; select STDOUT;
             say STDERR "|: xargs -P $procs -I % sh -c %" if $verbose;
             $xargs++;
         }
