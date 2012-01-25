@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+use 5.10.0;
+use strict;
+use warnings;
+
+# differences with GNU Parallel's --pipe mode are:
+#   - we expect (at present) a seekable filename, not STDIN
+#   - we don't (yet) support line/record based blocks; it's just by bytes
+
+# the second item in the list above should be easy to do; the first one is
+# rather more difficult without a temp file for the *input*, which is fine if
+# you use tmpfs I suppose.  (Parallel goes much more low level)
+
+# ----------------------------------------------------------------------
+
+use Getopt::Long qw(:config no_permute);
+
+my ( $help, $blocksize, $procs, $tmpfsd );
+GetOptions(
+    "help|h|?"      => \$help,         # this help text
+    "blocksize|b=i" => \$blocksize,    # block size in bytes (default 10MB)
+    "max-procs|p:i" => \$procs,        # parallel mode
+    "tmpfsd|t=s"    => \$tmpfsd,       # where to put tempfiles; see note below
+) or die "option error; please run with '-h' for help\n";
+
+usage() if $help or not @ARGV;         # exits;
+
+$blocksize ||= 1024 * 1024 * 10;
+
+# pass parallel mode option on to map
+$procs = 0 if defined($procs) and not $procs;
+$procs ||= 0;                          # uses map's default then
+
+# File::Temp::tempdir(), when called with TMPDIR=1, picks up from $ENV{TMPDIR}
+# if present, so this is how we pass the information on
+$ENV{TMPDIR} = $tmpfsd if $tmpfsd;
+
+use File::Temp qw(tempdir);
+END { chdir( $ENV{HOME} ); }
+# we need this END handler *after* the 'use File::Temp' above.  Without
+# this, if $PWD at exit was $tempdir, you get errors like "cannot remove
+# path when cwd is [...] at /usr/share/perl5/File/Temp.pm line 902".
+
+my $tempdir = tempdir( "split_map.XXXXXXXXXX", TMPDIR => 1, CLEANUP => 1 );
+
+# ----------------------------------------------------------------------
+
+# globals
+
+# ----------------------------------------------------------------------
+
+# arg-1 is a seekable file
+my $file = shift or die;
+my $size = -s $file;
+
+# arg-2 and later are the command to run
+my $cmd = join( " ", @ARGV );
+die "you forgot the command... gzip? bzip2? what?" unless $cmd;
+
+my $mapcmd = "%2 | $cmd > $tempdir/%1; touch $tempdir/%1.done";
+# TODO deal with the "-v"
+open( MAP, "|-", "map", "-d=t", "-v", "-p=$procs", "--", $mapcmd ) or die "open MAP failed: $!";
+select MAP; $|++; select STDERR; $|++; select STDOUT; $|++;
+
+split_file( 'dd', $file, $blocksize );    # init the splitter
+my $block_num;
+while ( my ( $bn, $cc ) = split_file() ) {
+    say MAP $bn . "\t" . $cc;
+    $block_num = $bn;
+}
+
+sub split_file {
+    state( $file, $method );
+    state $filesize;
+    state( $blocksize, $skip_blocks, $skip_bytes );    # data for 'dd' method
+    if (@_) {
+        # first 2 arguments are always method and filename
+        $method   = shift;
+        $file     = shift;
+        $filesize = -s $file;
+        # then, depending on the method, you get other arguments
+        if ( $method eq 'dd' ) {
+            $blocksize = shift;                        # arg-3
+            $skip_blocks = $skip_bytes = 0;
+        }
+
+        return;
+    }
+
+    if ( $method eq 'dd' ) {
+        return () if $skip_bytes >= $filesize;
+
+        my $bn = $skip_blocks;
+        my $cc = "dd if=$file bs=$blocksize count=1 skip=$skip_blocks";
+
+        $skip_blocks++;
+        $skip_bytes += $blocksize;
+
+        return ( $bn, $cc );
+    }
+}
+
+my $bn = 0;
+while ( $bn <= $block_num ) {
+    if ( -e "$tempdir/$bn.done" ) {
+        system( "cat", "$tempdir/$bn" );
+        unlink "$tempdir/$bn", "$tempdir/$bn.done";
+        $bn++;
+        next;
+    }
+    sleep 1;
+}
+say STDERR "---------- closing MAP";
+say STDERR "there should not be any output between this and the 'closed' message";
+close(MAP);
+say STDERR "========== closed MAP";
+
+# ----------------------------------------------------------------------
+
+sub usage {
+    # I don't like POD.  This is not up for discussion.
+
+    say "
+split_map -- split a single file and pass pieces through map
+
+Usage:      split_map filename command args > output
+
+Example:    split_map foo bzip2 -9 > foo.bz2
+";
+
+    @ARGV = ($0);
+    while (<>) {
+        next unless /^\s*GetOptions/ .. /^\s*\)/;
+        next if /^\s*GetOptions/ or /^\s*\)/;
+
+        my $op = '';
+        if (/"(.*?)"/) {
+            $op = "  " . join( ", ", map { s/[=:][sif]$//; /../ ? "--$_" : "-$_" } split /\|/, $1 );
+            print $op;
+        }
+        print( " " x ( 30 - length($op) ) );
+
+        s/.*#/#/;
+        print;
+    }
+
+    say "
+NOTES:
+  - the command (+ args) must take STDIN and produce STDOUT
+  - current split is only by block size; things requiring record size splits
+    won't work right now, but it should not be hard.
+
+  - it is *strongly* recommended to use a filesystem mounted as tmpfs and
+    either set the TMPDIR env var to its path or use the '-t' option
+
+  - do not use with commands that genuinely require the '%' sign; at present
+    there is no 'escaping' such % signs.
+  - if your filenames are not shell clean, be prepared to play with the
+    quoting to get '-p' or redirection or multiple commands to work.
+
+";
+
+    exit 1;
+}
+
+# ----------------------------------------------------------------------
+
+sub dbg {
+    use Data::Dumper;
+    for my $i (@_) {
+        print STDERR "DBG: " . Dumper($i);
+    }
+}
+
