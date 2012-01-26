@@ -27,7 +27,7 @@ die "you must be crazy..." if $quiet and $verbose;
 
 if ( defined($procs) and not $procs ) {
     try("cat /proc/cpuinfo | grep ^processor") or die "-p needs a number";
-    $procs = scalar( lines() );
+    $procs = scalar( lines() ) + 2;
 }
 
 $delim = " " if ( defined($delim) and not $delim );
