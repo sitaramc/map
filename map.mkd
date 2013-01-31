@@ -1,6 +1,6 @@
 # map -- making xargs simpler *and* more powerful at the same time!
 
-[[TOC]]
+TOC
 
 ----
 

@@ -1,4 +1,9 @@
 # map -- making xargs simpler and more powerful
 
-Pre-rendered online documentation is
-[here](http://sitaramc.github.com/map/map.html).
+The map command makes using xargs much easier for some common cases.  It is
+also much more powerful, allowing various substitutions within the command to
+be run.
+
+## license
+
+GPL v2

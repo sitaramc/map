@@ -1,6 +1,6 @@
-# F=mapgp map versus GNU parallel
+## #mapgp map versus GNU parallel
 
-[[TOC]]
+TOC
 
 Here's a feature comparision of map versus GNU parallel, mostly using examples
 in their [man page](http://www.gnu.org/software/parallel/man.html).
@@ -13,7 +13,7 @@ Not Unix" but this is too much!)
 It seems to match almost all the examples upto the halfway point of their set,
 despite having only 3 options to remember, compared to almost a 100.
 
-## detailed list of examples
+### detailed list of examples
 
 (Note: we're omitting the examples that talk about spaces in filenames, using
 the null character, etc., because I didn't have the energy to test them
@@ -165,7 +165,7 @@ you want:
 
     cat cmdlist | map -p 100 %
 
-## #cantwont things that map cannot/will not do
+### #cantwont things that map cannot/will not do
 
 (this is only from the examples list; I haven't read the full options list,
 reasoning that if an option were indispensable they'd have an example for it
