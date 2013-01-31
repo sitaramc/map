@@ -1,0 +1,26 @@
+# map documentation
+
+This is the documentation for the "map" command.
+
+## map
+
+map makes xargs simpler and more powerful at the same time!
+
+  * [map][]
+      * [concepts][]
+      * [default replacement string][drs]
+      * [details][]
+          * single replacements
+          * multiple replacements
+          * multiple jobs in parallel
+          * specifying maximum arguments per invocation
+          * delimiter mode
+      * [IMPORTANT NOTES][IN]
+          * Filenames with unusual characters
+          * OTHER WARNINGS
+
+## map versus GNU parallel
+
+  * [map versus GNU parallel][mapgp]
+      * detailed list of examples
+      * things that map cannot/will not do
