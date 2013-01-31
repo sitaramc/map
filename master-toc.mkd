@@ -1,8 +1,16 @@
-# map documentation
+# map -- making xargs simpler and more powerful
 
-This is the documentation for the "map" command.
+The map command makes using xargs much easier for some common cases.  It is
+also much more powerful, allowing various substitutions within the command to
+be run.
 
-## map
+## license
+
+GPL v2
+
+## documentation links
+
+### map
 
 map makes xargs simpler and more powerful at the same time!
 
@@ -19,7 +27,7 @@ map makes xargs simpler and more powerful at the same time!
           * Filenames with unusual characters
           * OTHER WARNINGS
 
-## map versus GNU parallel
+### map versus GNU parallel
 
   * [map versus GNU parallel][mapgp]
       * detailed list of examples
