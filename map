@@ -62,8 +62,8 @@ if ( -t 0 ) {
 sane(@cmd) or die "bad command";    # TODO better message
 
 # add a default placeholder (% if -p, else %%)
-push @cmd, ( ( $procs and not $maxargs ) ? "%" : "%%" ) unless @cmd ~~ /%/;
-my $shell_metas = ( @cmd ~~ /[~\$&*\[\]|;<>]/ );    # XXX these characters may need change
+push @cmd, ( ( $procs and not $maxargs ) ? "%" : "%%" ) unless grep { /%/ } @cmd ;
+my $shell_metas = ( grep { /[~\$&*\[\]|;<>]/ } @cmd );    # XXX these characters may need change
 
 if (@args) {
     # the '-t 0' case
@@ -82,7 +82,7 @@ build();    # you may have something left over
 # very rudimentary sanity check
 sub sane {
     my @cmd = @_;
-    return 0 if ( @cmd ~~ /%%/ and @cmd ~~ /(?<!%)%(?!%)/ );
+    return 0 if ( ( grep { /%%/ } @cmd ) and ( grep { /(?<!%)%(?!%)/ } @cmd ) );
     return 1;
 }
 
@@ -102,18 +102,18 @@ sub build {
 
     @gencmd = @cmd unless @gencmd;
 
-    if ( @gencmd ~~ /%%/ ) {
+    if ( grep { /%%/ } @gencmd ) {
         @gencmd = insert( $arg, @gencmd );
-    } elsif ( @gencmd ~~ /%[1-9]/ ) {
+    } elsif ( grep { /%[1-9]/ } @gencmd ) {
         die "%[1-9] not allowed unless '-d' option used" unless $delim;
         @gencmd = replace_delim( $arg, @gencmd );
-    } elsif ( @gencmd ~~ /%/ ) {
+    } elsif ( grep { /%/ } @gencmd ) {
         @gencmd = replace( $arg, @gencmd );
     }
 
     $nargs++;
 
-    return if @gencmd ~~ /%%/;    # we can't execute yet
+    return if grep { /%%/ } @gencmd;    # we can't execute yet
 
     sys(@gencmd);
     @gencmd = (); $nargs = 0;
@@ -126,7 +126,8 @@ sub insert {
     local @_ = @_;                # this is @gencmd
     my @ret;
 
-    for my $_ (@_) {
+    local $_;
+    for (@_) {
         unless (/%%/) {
             push @ret, $_;
             next;
@@ -155,7 +156,8 @@ sub replace {
     local @_ = @_;    # this is @gencmd
     my @ret;
 
-    for my $_ (@_) {
+    local $_;
+    for (@_) {
         unless (/%/) {
             push @ret, $_;
             next;
@@ -186,7 +188,8 @@ sub replace_delim {
     local @_ = @_;    # this is @gencmd
     my @ret;
 
-    for my $_ (@_) {
+    local $_;
+    for (@_) {
         unless (/%/) {
             push @ret, $_;
             next;
@@ -244,7 +247,7 @@ sub sys {
 }
 
 sub split_path {
-    my $_ = shift;
+    local $_ = shift;
     s(/$)();    # remove irritating trailing slash if present
     my $f = $_;
     my ( $d, $b, $e ) = ('') x 3;
