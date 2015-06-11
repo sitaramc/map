@@ -17,9 +17,9 @@ command, with xargs comparisons when needed.
 @@gray(In addition, there's something called [GNU Parallel][gp] with a
 **huge** list of examples on its pages.  Casually looking at the examples, I
 found that `map` could do pretty much all of the generic ones!  So I wrote up
-an honest [feature comparison][mapgp], (including things that map
+a [feature comparison][mapgp], (including things that map
 [can't/won't][mapgpcw] do).  As you read that page, remember that map is 330
-lines of perl, and GNu Parallel is 5000 lines.  Also remember that map has 3
+lines of perl, and GNU Parallel is 5000 lines.  Also remember that map has 3
 options (if you don't count -h, -q, and -v), GNU Parallel has almost a 100!)@@
 
 [gp]: http://www.gnu.org/software/parallel/
@@ -154,17 +154,14 @@ Most often, you want all the arguments tacked on to one "run" of the
 the command.  Do this by specifying a `%%`:
 
     seq 1 3 | map echo %%
-
-returns
-
+    # returns:
     1 2 3
 
 Since this is the most common reason for using map, this is the default if you
 don't specify either % or %%:
 
     seq 1 3 | map echo
-    # returns:
-    1 2 3
+    # same as above
 
 A `%%` (and similarly `%%D`, `%%B`, and `%%E`) get replaced by as many input
 lines as possible (subject to internal limit of command line length and the
