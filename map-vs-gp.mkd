@@ -1,0 +1,249 @@
+# Map versus GNU Parallel
+
+Here's a feature comparision of map versus GNU parallel, mostly using examples
+in their [man page](http://www.gnu.org/software/parallel/man.html).
+
+Note that GNU parallel appears to have an unholy obsession with files that
+have funky names, like filenames with **newlines** in them.  One of their
+examples is a file called `My brother's 12" records` (no comments from the
+peanut gallery please!).
+
+In real life, if you have a file with a newline or a double quote (or
+combination of quotes) in it, it's more likely someone trying to attack you
+than anything else.  See Appendix 1 in the main documentation for a longer
+rant on this.
+
+# Summary
+
+Anyway, the [main man page](https://www.gnu.org/software/parallel/man.html)
+has 48 examples (as of 2015-11).  Here are some meta-comments about those
+examples that didn't translate cleanly (or in some cases didn't translate at
+all) in map:
+
+*   Cartesian product: Map can do that by piping to another map (probably ad
+    infinitum), but on the rare occasions I have needed them, I used a very
+    simple program; see Appendix 1 (it's small enough that I can -- if I ever
+    feel the need -- roll it into map, too).  Almost all of the examples
+    involving CPs can be done using that, with the final result piped to map's
+    delimiter mode; see example 13 below.
+
+*   Embedding perl code: we don't do that, but it can't be that hard, if
+    needed.  If someone sends me a really convincing -- as in, not contrived
+    -- use case I will probably add it.
+
+*   Grouping output lines: I have never come across a case where I want
+    parallelism as well as ordered output.  On the rare cases that I did, I
+    just add `| tail -9999` to the command template; works fine.
+
+*   Tagging output lines: Even rarer than the above.  If needed, I would
+    probably just add `| sed -e "s/^/% /"`.
+
+*   Keep output order same as input: Again, I never needed that *and*
+    parallelism.  Unlike the previous two examples, I don't have a ready
+    alternative either.  So this is definitely something I may look into if I
+    ever see the need (or someone asks).
+
+*   Splitting a big file and sending it to different invocations: I had a
+    program called split_map in the old 'map' but I don't think I ever used
+    it so I got rid of it.  (If someone was using it and needs it back, let me
+    know...)
+
+*   Dealing with remote systems, sending files back and forth, and so on:
+    fuggedaboudit!
+
+PS: Honestly, Parallel has so many options for so many things I'm disappointed
+it doesn't come with a game of tetris to play while you're waiting for your
+jobs to complete ;-)
+
+# Details
+
+Let's briefly recap map's options, defaults, and argument handling first.  The
+default max-args is 100 (`-n` option) and the default parallelism is 4 (`-p`
+option).  The documentation explains the rationale behind these defaults.  The
+command template can contain `%` (which is eqvt to `%F`), or `%D`, `%B`, and
+`%E`.  Generally, `%F` equals `%D/%B.%E`.  In 'delimiter mode', you can use
+`%1` thru `%9`.
+
+With that out of the way, here are the details for some of the interesting
+ones, as briefly as I could write them up.  I've left out many that are
+boring, trivially doable, or repeat an earlier example with marginal changes,
+Stuff that is completely outside the core idea (like all the remote file
+handling stuff) is also ignored.  And I've already ranted about filenames with
+quote characters and so on.
+
+*   example 1, xargs -n1
+
+        parallel gzip --best
+        map -n1 "gzip --best"
+
+*   example 2, arguments from command line
+
+        parallel gzip --best ::: *.html
+        map -n1 "gzip --best" *.html
+
+*   example 3, inserting multiple arguments
+
+        parallel -m mv {} destdir
+        map "mv % destdir"
+
+*   example 4, context replace
+
+        seq -w 0 9999 | parallel -X rm pict{}.jpg
+        seq -w 0 9999 | map "rm pict%.jpg"
+
+*   example 5, compute intensive jobs and substitution
+
+        find . -name '*.jpg' | parallel convert -geometry 120 {} {}_thumb.jpg
+        find . -name '*.jpg' | map "convert -geometry 120 % %_thumb.jpg"
+
+        find . -name '*.jpg' | parallel convert -geometry 120 {} {.}_thumb.jpg
+        find . -name '*.jpg' | map "convert -geometry 120 % %D/%B_thumb.jpg"
+
+*   example 6, substitution and redirection
+
+        parallel "zcat {} >{.}" ::: *.gz
+        map "zcat % > %B" *.gz
+
+*   example 8, calling bash functions
+
+    So, after impressing us with their ability to handle shell functions
+    entirely typed at the command line (in example 7), they now stoop down to
+    how we mere mortals can/should do it.
+
+    Anyway this works fine (in bash), using map.
+
+*   example 10, log rotate
+
+        seq 9 -1 1 | parallel -j1 mv log.{} log.'{= $_++ =}'
+        seq 9 -1 1 | map -p1 'echo mv log.% log.$(( % + 1 ))'
+
+*   example 11, removing file extension...
+
+    This is covered extensively in the main documentation.  Not sure what
+    parallel's `{.}` means but for map, you use `%B` if you are sure the file
+    doesn't have a directory component, and `%D/%B` otherwise.  (Or you can
+    play safe by always using `%D/%B`.)
+
+*   example 12, removing two file extensions
+
+        parallel --plus 'mkdir {..}; tar -C {..} -xf {}' ::: *.tar.gz
+
+        map -1 "echo % %B" *.tar.gz | map -1 echo %B |
+            map -1 -ds "echo mkdir %2; echo tar -C %2 -xf %1"
+
+    The first map takes "foo.tar.gz" and prints "foo.tar.gz foo.tar".  That's
+    in one line.  The next map take that, and since map treats the entire line
+    as one argument, it chops off what it sees as the extension, giving us
+    "foo.tar.gz foo".  Then delimiter mode picks up the two fields and
+    substitutes them for %1 and %2 in the appropriate places.
+
+    But yeah, their solution looks simpler.  However, I won't be adding a
+    "%BB" or something; it's not that important.
+
+*   example 13, download 10 images for past 30 days
+
+        parallel echo http://foo.com/'$(date -d "today -{1} days" +%Y%m%d)_{2}.jpg' ::: $(seq 6) ::: $(seq -w 2)
+
+    This is basically a cartesian product, with some backtick interpolation
+    thrown in to complicate things needlessly.  (By which I mean, the date
+    command could have been pushed into the `$(seq 6)` piece, and it would
+    have been much clearer overall.)
+
+        seq 6 | map -1 'date -d "today -% days" +%%Y%%m%%d' |
+            map -1 'seq -w 2 | map -1 echo % %%' |
+            map -1 -ds "echo wget http://foo.com/%1_%2.jpg"
+
+    The first line produces a series of dates (YYYYmmdd), the second creates a
+    cartesian product with the sequence "1", and "2", producing lines like
+    "20151115 1", "20151115 2", etc., and the third line uses delimiter mode
+    to create the actual command from the two fields in each line.
+
+    But honestly, if I needed a cartesian product I'd use a program meant to
+    do just that; see Appendix 1.
+
+*   example 14, embedding perl code
+
+    The stated purpose is "Copy files as last modified date (ISO8601) with
+    added random digits", but why would you do that?
+
+        find . | parallel cp {} \
+            '../destdir/{= $a=int(10000*rand); $_=`date -r "$_" +%FT%T"$a"`; chomp; =}'
+
+    Map doesn't allow embedded perl code, but this specific example can be
+    done -- for what it is worth with such a meaningless exercise -- in shell
+    too:
+
+        find . | map -1 'cp % ../dst/`date -r % +%%FT%%T `_$RANDOM'
+
+*   example 25, suppsedly about "using shell variables"
+
+    Please see the appendix on "security" in the documentation for map.
+
+*   example 29, parallel grep: "on multi-core CPUs [...] can often speed this
+    up", says the manual.
+
+    Not for most people.  I've seen people make measurements on a warm cache
+    and walk away blithely saying "grep is not IO-bound".  Sorry, but it is.
+    Disk speeds -- and especially latency -- have not kept pace with CPU.
+
+    There are two exceptions to this.  One, your regex is pathologically bad,
+    (or you need to dust off your regex book).  Two, you are using high end
+    SSD, because then not only is the raw speed much more, there is no
+    latency.
+
+    Anyway, the only part of their examples that map does not do, is the "keep
+    order".  (Curiously, they are feeding it from `find` without a `sort`,
+    which makes the "keep order" somewhat useless; I have never known `find`
+    to print filenames in any predictable order.)
+
+*   example 39, run the same command 10 times
+
+        seq 10 | parallel -n0 my_command my_args
+        seq 10 | map "my_command my_args # %"
+
+    yeah, it's a trick but it works fine!
+
+*   example 40, working as 'cat | sh'
+
+        parallel -j 100 < jobs_to_run
+        map -p100 -n1 < jobs_to_run
+
+# Appendix 1: cartesian products
+
+I have rarely found a need for a cartesian product but it does happen.  Long
+before I wrote `map`, I had the following script in my `~/bin`:
+
+    #!/usr/bin/perl
+
+    # seq 1 3 | cart-prod a b c | cart-prod one two
+
+    use strict;
+    use warnings;
+
+    my @args = @ARGV;
+    @ARGV = ();
+
+    while (<>) {
+        chomp;
+        for my $a (@args) {
+            print "$_\t" if $_;
+            print "$a\n";
+        }
+    }
+
+If I had to do example 13 it would be:
+
+    seq 6 | cart-prod {1..2} | while read a b
+    do
+        echo wget http://www.example.com/path/to/$(date -d "today -$a days" +%Y%m%d)_$b.jpg
+    done
+
+which is a lot more readable than Parallel's ":::" syntax.
+
+Similarly, the first part of example 16 would be:
+
+    seq 5 | cart-prod {01..10} | cart-prod {1..5} | map -ds 'echo x%1y%2z%3 > x%1y%2z%3'
+
+And example 21 (finding the lowest difference between files) would be:
+
+    ls | cart-prod * | map -1 -ds 'echo %1 %2\\t`diff %1 %2 | wc -l`' | sort -k3n

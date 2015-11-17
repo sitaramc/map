@@ -1,0 +1,258 @@
+# Map -- making xargs simpler *and* more powerful!
+
+>   >   NOTE that this command has been completely rewritten in Nov 2015.  The
+>   >   old one is available in the "old" branch.  **The 'usage' HAS changed
+>   >   significantly, and in a backward incompatible way.**  Be sure to read
+>   >   the documentation!
+
+# For existing users
+
+The major changes from the old "map" command are:
+
+*   **SECURITY**; see appendix 1 for details.  **Even though this is in the
+    appendix, it is important -- please read!**
+*   **important**: the meaning of `%%` has changed; please read below.
+*   `-v` replaced by using environment variable "D" to "1".  `-q` no longer
+    available.
+*   `-p` defaults to 4, not #CPUs.
+*   Finally, we no longer use 'xargs' to do the actual parallelism; we do it
+    natively, in pure perl.
+
+----------------------------------------------------------------------
+
+# OVERVIEW
+
+`map` can replace xargs for most purposes as well as replace many `for` loops
+in shell.  Clone the [repo](https://github.com/sitaramc/map) or grab just the
+[script](https://raw.githubusercontent.com/sitaramc/map/master/map).  Run `map
+-h` to get some quick help, but be aware that only scratches the surface!
+
+Map is **line-oriented**.  Each input *line* is an argument, not each word
+within a line.
+
+Map has only **two options**: `-p` (**max procs**, default 4), which says how
+many jobs to run, and keep running, in parallel, and `-n` (**max args**),
+which says how many of the input arguments to use in *one* command/run.  The
+default for max args is either 1 or 100; see later.  As a **convenient
+shortcut**, if the *first* argument is `-1` (in general, `-N` for any integer
+N), this is converted to `-p1 -nN` -- i.e., single-processing, N arguments per
+command.
+
+Map has only **one replacement string**, the `%` symbol, with some easy to
+remember suffixes.  `%` is the same as `%F`, and stands for the full argument.
+`%D` stands for the directory component of the argument (`.` if no directory
+component existed), `%B` for the basename, and `%E` for extension.  In
+general, `%F` equals `%D/%B.%E`.  Finally, `%%` renders as a `%` sign in the
+resulting command.
+
+(**Default `%`**: if no `%` sign or variant is supplied, a single `%` is added
+at the end.)
+
+The **default max-args** is 1 if the command template has more than one `%`
+(or `%F`, `%D`, `%B`, `%E`) in it, and 100 if the template has only one `%`
+(`%%` is not relevant for this purpose).  To understand why, consider the
+following three commands:
+
+    ls *.gif | map convert % %B.png             # default max-args: 1
+    map "mkdir %B; tar -C %B -xf %" *.tgz       # default max-args: 1
+
+    ls *.gif | map cp % /tmp                    # default max-args: 100
+
+In the first and second examples, the command must run invididually for each
+input, because the command has both the basename of the file (`%B`) as well as
+the full filename (`%`) in the template.  In fact, I cannot think of any
+command with more than one `%` in the command template, where it makes sense
+to have `-n` greater than 1.  Hence the default in such cases is 1.
+
+In the third example, we're OK with running `cp a.gif b.gif c.gif [...] /tmp`,
+so the default is 100.
+
+However, in this case there are also **counter-examples**, where you only need
+a single `%`, but max-args also must be limited to 1.  A common example is:
+
+    ls *.tar | map tar -xf %            # will FAIL if more than one tar file found
+
+because tar cannot extract more than one archive at a time.  In such cases you
+**must** use `-n 1`:
+
+    ls *.tar | map -n 1 tar -xf %
+
+Map can take **arguments from the command line** too.  In this case the
+complete actual command must be in quotes:
+
+    map "cp % /tmp" *.tgz
+    # same as: ls *.tgz | map cp % /tmp
+
+By the way, did you notice some of the earlier examples, we had **arguments in
+the middle of the command**, yet map substituted more than one in its place?
+(`xargs` cannot insert multiple arguments in the middle; only at the end.)
+
+Map can do more than that!  If you use "%", or one of its variants, *within* a
+word, the **entire word is repeated** when the max-args is greater than one:
+
+        map "du -sm /home/%/mail" alice bob carol
+        # runs: du -sm /home/alice/mail /home/bob/mail /home/carol/mail
+        # NOT something silly like: du -sm /home/alice bob carol/mail
+
+Finally, map also has a **delimiter mode**, which introduces replacement
+strings `%1` thru `%9`, letting you do things like this:
+
+    cat /etc/passwd | map -d: 'echo user %1 has shell %7'
+
+In this mode, you can supply `-ds` to mean whitespace, `-dt` to mean tabs, or
+specify the actual delimiter (like the `-d:` above).
+
+# Notes
+
+*   By default, there's a delay of 0.01 seconds before each fork, to prevent
+    "accidents".  Use `-f` (for 'fullspeed') if you are running lots of
+    short lived jobs.
+
+*   If you want to see what command is *actually* being executed, run it with
+    the environment variable "D" set to 1.
+
+*   Since many commands don't produce any output for a long time, map has a
+    very low-noise way of showing progress:
+
+        $ map -n 1 -p 3 "tar cf %B.tar %" */
+        +++-+-+-+---
+
+    This only kicks in when `-p` is greater than 1 and the D environment
+    variable (see previous bullet) is unset.  Each `+` is a new task started,
+    and `-` is a task ended.  This goes to STDERR.
+
+*   When map exits, the exit code will be the sum of:
+
+    *   if one or more jobs failed, add 1
+    *   if unsafe files (see Appendix 1) were found, add 2
+
+# Thoughts/discussion
+
+The rationale for some of the changes and decisions goes like this:
+
+*   The whole "%" versus "%%" business was confusing some people, especially
+    because of the weirdness of things like "convert %% %%B.png", which won't
+    work!.  Being able to produce an actual "%" was also considered important,
+    and "%%" was best for that.
+
+    One could argue that the current scheme is also confusing, but it leans
+    towards more explicitness.
+
+*   Using #CPUs as the default for `-p` didn't seem to make sense when most of
+    my jobs are IO- or network-bound.  The default is 4 now, but again, think
+    of this as increasing explicitness.
+
+*   The choice of "100" for the default max-args is somewhat of an educated
+    guess.  The length of the command line very rarely becomes a factor, IMO,
+    and if you have a list of say 1000 arguments, then it is arguably better
+    to fire off 4 parallel runs, each taking 100 arguments, and repeat them as
+    they finish, than to fire off just one with all 1000 arguments.
+
+*   The "delay" of 0.01 seconds before each fork prevents run-a-way forking
+    when you make a mistake (don't ask!).  In most normal use, you're more
+    likely to have a few long running ("long" relative to 0.01 seconds!) tasks
+    rather than several thousand extremely short-lived ones.  So you'll rarely
+    need to use the `-f` override, but it's there in case you do.
+
+*   Switching from xargs to actually run the parallel stuff natively in perl
+    turned out to be ridiculously easy, so I did.
+
+# Appendix 1: Security and bad filenames
+
+A long time ago, I used to say that people who use spaces in filenames should
+be shot.  I have mellowed a bit from those days, but there are still a lot of
+characters which have no good reason to be in a file name -- it's either a
+serious bug, or someone trying to attack your system.
+
+(A summary of "invalid" filenames I found on my machines is at the bottom of
+this section.)
+
+As such, programs that *quietly handle them, with no warnings at all*, are
+doing their users a disservice.  Getting used to such "smartness" in one
+program may backfire unless *all* the programs you use are equally smart *and*
+you never write oddball one-off scripts.
+
+People that hide behind "the standard allows it, so the script must support
+it", need to read section 2.2 ("Standards permit the exclusion of bad
+filenames") of [this page][dwfn] or section 4.7 ("Filename portability") of
+"The Open Group Base Specifications Issue 7 IEEE Std 1003.1, 2013 Edition",
+[General Concepts][ogpfn].  Not only are you misinformed, you're misleading
+your users/readers with your "standarder-than-thou" snootiness.  (If you want
+to know who I'm railing at, just search stackoverflow for "newlines in
+filenames" or something similar -- there's no shortage of them!)
+
+[dwfn]: http://www.dwheeler.com/essays/fixing-unix-linux-filenames.html
+[ogpfn]: http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html
+
+Map does allow you to work with such files, but imposes some restrictions.
+Briefly, you can't use files that are potentially insecure with a command
+template that is guaranteed to require a shell.  Here are the details:
+
+*   First, some definitions.  "Shell meta characters" are one of 
+
+        ` ~ # $ & * ( ) [  ] { } \ | ; ' " < > ?
+
+    A "shell unsafe" filename contains one of these characters or a newline or
+    a tab (we give spaces a pass -- that ship has sailed, sadly) in the
+    filename, OR starts with a "-".
+
+*   If your command template has shell metacharacters, then files whose names
+    are shell unsafe are rejected, with a message printed to that effect.
+    There is no way that combination will be allowed.  The remaining files are
+    allowed to pass.  **This may be a problem in some cases, where a partial
+    run is not considered to be valid.  YOU HAVE BEEN WARNED.**  If you want
+    to detect such problems before you run your actual command, just run your
+    file list through:
+
+        ... | map ": > /dev/null"
+
+*   If your command template does not have any shell metacharacters, nothing
+    is rejected, and the resulting command(s) are run directly from perl in
+    "list" mode (see 'perldoc -f exec' etc for details).  This is secure.
+
+    *   **However, note that the direct command you give to map may itself be
+        a shell script.  There is no way for map to detect that, and careless
+        use could lead to the same problems we are trying to catch/prevent.**
+        But at least you have some warning from map (see next bullet) if there
+        are unsafe files in a directory where you would not normally expect
+        them.
+
+*   Either way, at the end of the run you will see a count of files whose
+    names were shell-unsafe, if there were any, even if the commands ran in
+    "list" mode and thus did not reject any of the files.
+
+Initially, I chose the option of making the "unsafe file" detection tighter
+(fewer characters are deemed unsafe), and *never* allowing such filenames to
+be processed at all.  But I quickly realised that there's value in allowing
+direct external commands without using a shell ("rm" comes to mind (heh!) but
+also potentially "tar", "mv", and so on), so I broadened the criteria to be
+considered unsafe, and allowed non-shell (safe) execution.
+
+The best part is that you can now run something like this:
+
+    find ... | map ": > /dev/null"
+
+and it'll give you a nice little list of files that you probably want to
+rename...
+
+...or, worse, didn't expect to find!
+
+## summary of files I found on my machines:
+
+I found the following broad types of unsafe filenames.  Except for the second
+and third items on the list, I don't ever anticipate **needing** to process
+them individually.  For those two, I'll only use binaries ("mv", "tar", etc.)
+or carefully vetted scripts when processing them via map.
+
+1.  `~` at the end, like some editors leave (or `pubring.gpg~`).  Mine
+    doesn't, but it might not be a bad idea to make an exception for `~` if it
+    is not at the beginning of a filename; that should be quite safe.
+
+2.  parentheses and single quote are sometimes found in media and document
+    names.
+
+3.  same with `&`, though a bit less often.
+
+4.  gpg revocation keys appear to contain the keyid in parens.
+
+5.  mozilla and thunderbird extensions use braces `{}` around some long GUIDs.

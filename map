@@ -1,0 +1,268 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use 5.10.0;
+use Data::Dumper;
+$Data::Dumper::Terse  = 1;
+$Data::Dumper::Indent = 0;
+
+use Time::HiRes qw(sleep);
+use POSIX ":sys_wait_h";
+use Getopt::Std;
+
+# ----------------------------------------------------------------------
+# constants, globals, and option handling
+use vars qw($opt_n $opt_p $opt_d $opt_f $opt_h $cmdt %pid);
+my $qr_shell_meta  = qr([`~#\$&*()\[\]\{\}\\|;'"<>?]);
+my $qr_unsafe_file = qr(^-|[\n\t]|$qr_shell_meta);
+my $cmdt_has_shell_meta = 0;
+my $unsafe_count        = 0;
+my $fail_count          = 0;
+
+usage() unless @ARGV;
+
+# -N as *first* arg is shortcut for "-p1 -nN"; do this before calling getopt
+splice @ARGV, 0, 1, "-p1", "-n$1" if ( $ARGV[0] =~ /^-(\d+)$/ );
+getopts('n:p:d:fh');
+usage() if $opt_h;
+
+# ----------------------------------------------------------------------
+# main
+
+setup();    # uses up $ARGV[0], at least
+_log( 1, "input options: -n $opt_n -p $opt_p, template: '$cmdt'" );
+
+if (@ARGV) {
+    batcher($_) for @ARGV;
+    batcher(undef);    # undef signals 'eof' to batcher
+} else {
+    while (<>) {
+        chomp; next unless /\S/;
+        batcher($_);
+    }
+    batcher(undef);
+}
+
+# stragglers
+1 while _wait() >= 0;
+
+# status
+_log( 0, "==== $unsafe_count unsafe filenames found ====" ) if $unsafe_count;
+_log( 0, "==== $fail_count jobs failed ====" ) if $fail_count;
+exit( ( $fail_count ? 1 : 0 ) + ( $unsafe_count ? 2 : 0 ) );
+
+# ----------------------------------------------------------------------
+# setup
+
+sub setup {
+    @ARGV = ($ENV{SHELL}, "-c") unless @ARGV;
+
+    if ( -t 0 ) {
+        $cmdt = shift @ARGV;
+    } else {
+        $cmdt = join( " ", @ARGV ); @ARGV = ();
+    }
+    $opt_p ||= 4;
+
+    my $count = ( $cmdt =~ s/%/%/g );    # count %s
+    $count -= ( ( $cmdt =~ s/%%/%%/g ) * 2 );    # subtract count of %%
+    $cmdt .= " %F" unless $count;                # append single %F if needed
+    $opt_n ||= ( $count > 1 ? 1 : 100 );
+
+    # default % is %F unless followed by D/B/E/%/1-9
+    $cmdt =~ s/%([FDBE%1-9])|%(.|$)/"%" . ($1 ? $1 : "F$2")/ge;
+
+    $cmdt_has_shell_meta = 1 if $cmdt =~ $qr_shell_meta;
+}
+
+# ----------------------------------------------------------------------
+# batcher
+
+sub batcher {
+    state $count = 0;
+    state @batch;
+
+    my $arg = shift;
+
+    if ( defined($arg) ) {
+        if ( $arg =~ $qr_unsafe_file ) {
+            $unsafe_count++;
+            if ($cmdt_has_shell_meta) {
+                # the command template requires shell, but the argument is not shell safe
+                _log( 0, "rejected: '$arg'" );
+                return;
+            }
+        }
+        push @batch, $arg;
+        $count++;
+    }
+
+    if ( $count >= $opt_n or ( $count and !defined($arg) ) ) {
+        builder(@batch);
+        $count = 0;
+        @batch = ();
+    }
+}
+
+# ----------------------------------------------------------------------
+# builder
+
+sub builder {
+    my @batch = @_;
+
+    my @out = ();
+    for my $word ( ( split ' ', $cmdt ) ) {
+        # every word in the command template needs to be examined for %[FDBE1-9]
+        if ( $word !~ /%[FDBE1-9]/ ) {
+            # words that don't match are used as is
+            $word =~ s/%%/%/g;
+            push @out, $word;
+            next;
+        }
+        # other words are replaced by N words, each formed by interpolating
+        # one of the N arguments.  (N == max args; the '-n' option).  Or
+        # the split out parts of the current argument
+        for my $arg (@batch) {
+            my @argwords = ();
+            if ($opt_d) {
+                if    ( $opt_d eq 't' ) { @argwords = split "\t", $arg }
+                elsif ( $opt_d eq 's' ) { @argwords = split ' ',  $arg }
+                else                    { @argwords = split $opt_d, $arg }
+            }
+            push @out, interpolate( $arg, $word, 'dummy', @argwords );
+        }
+    }
+    runner(@out);
+}
+
+sub interpolate {
+    # interpolate $arg (or its derived forms) into $word as needed
+    my ( $arg, $word, @argwords ) = @_;
+    # the 0-th element of @argwords is 'dummy', so 1-based indexing works!
+    my ( $f, $d, $b, $e ) = split_path($arg);
+    my %x = ( '%' => '%', F => $f, D => $d, B => $b, E => $e );
+    $word =~ s/%([FDBE%1-9])/$x{$1} || $argwords[$1]/ge;
+
+    return $word;
+}
+
+sub split_path {
+    local $_ = shift;
+    s(/$)();    # remove irritating trailing slash if present
+    my $f = $_;
+    my ( $d, $b, $e ) = ('') x 3;
+    $d = s(^(.*)/)() ? $1 : ".";
+    if (m(^(.*)(\.[^.]+)$)) {
+        ( $b, $e ) = ( $1, $2 );
+    } else {    # there was no period
+        $b = $_;
+    }
+    return ( $f, $d, $b, $e );
+}
+
+# ----------------------------------------------------------------------
+# runner
+
+sub runner {
+    my @cmd = @_;
+
+    while ( keys(%pid) >= $opt_p ) {
+        my $pid = _wait();
+        delete $pid{$pid};
+    }
+
+    my $pid = spawn(@cmd);
+    $pid{$pid} = join( " ", @cmd );
+    print STDERR "+" if $opt_p > 1 and not $ENV{D};
+    _log( 1, "$pid\t" . ( $cmdt_has_shell_meta ? $pid{$pid} : Dumper( \@cmd ) ) );
+}
+
+sub spawn {
+    my @cmd = @_;
+
+    # don't spawn more than 100 per second unless '-f' supplied
+    sleep 0.01 unless $opt_f;
+
+    my $pid = fork;
+    die "fork: $!" unless defined $pid;
+    return $pid if $pid;
+
+    if ($cmdt_has_shell_meta) {
+        # command *needs* to be run from the shell, since it has meta
+        # characters.  We have also rejected filenames which could cause a
+        # problem so it's safe to run this way.
+        my $cmd = join( " ", @cmd );
+        exec $ENV{SHELL}, "-c", $cmd;
+    } else {
+        # command doesn't need to be run from a shell (and some arguments
+        # *may* be shell unsafe too), so run it securely
+        exec { $cmd[0] } @cmd;
+    }
+
+    die "exec: $!";
+}
+
+sub _wait {
+    my $pid = wait();
+    return $pid if $pid == -1;    # no more processes to wait on
+    my $es = $?;
+    print STDERR "-" if $opt_p > 1 and not $ENV{D};
+    return $pid unless $es or $ENV{D};    # nothing to see, nothing asked to show
+
+    $fail_count++ if $es;
+    if ( $es == -1 ) {
+        $es = "FAILED: $!";
+    } elsif ( $es & 127 ) {
+        $es = sprintf "KILLED: signal %d, %s coredump", ( $es & 127 ), ( $es & 128 ) ? 'with' : 'without';
+    } else {
+        $es = sprintf "EXITED: exit status %d", $es >> 8;
+    }
+
+    # you have to show *something*, whether because es != 0 or D != 0.  For D
+    # != 0, the command need not be shown; it was already shown when it started
+    _log( 0, "$pid\t$es" . ( $ENV{D} ? "" : "\n\t$pid{$pid}" ) );
+    return $pid;
+}
+
+# ----------------------------------------------------------------------
+# service routines
+
+sub gen_ts {
+    my ( $s, $m, $h ) = (localtime)[ 0 .. 2 ];
+    for ( $s, $m, $h ) {
+        $_ = "0$_" if $_ < 10;
+    }
+    return "[$h:$m:$s] ";
+}
+
+sub _log {
+    my ( $lvl, $msg ) = @_;
+    return if $lvl > ( $ENV{D} || 0 );
+    say STDERR gen_ts . $msg;
+}
+
+# ----------------------------------------------------------------------
+# usage
+
+sub usage {
+    say <DATA>;
+    exit 1;
+}
+
+__DATA__
+
+Usage: map [-p maxprocs] [-n max-args] [-ds|-dt|-dX] [-f] command-template [args]
+
+-p: maxprocs: number of commands to run in parallel (default 4)
+-n: max-args: number of arguments in each invocation of a command (default is
+    either 1 or 100; see documentation)
+-d: delimiter mode: see documentation
+-f: fullspeed; do not delay 0.01s before each fork
+
+Also, if the FIRST argument is '-1' (in general, '-N' for any integer N), this
+is converted to '-p1 -nN'.  That is, single-processing, N arguments per command.
+
+Please note THIS IS A COMPLETE REWRITE (Nov 2015).  There are several
+backward-incompatible changes from the old "map" command.  Please see
+http://github.com/sitaramc/map/index.mkd for details.
+
