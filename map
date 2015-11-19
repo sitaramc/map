@@ -12,7 +12,7 @@ use Getopt::Std;
 
 # ----------------------------------------------------------------------
 # constants, globals, and option handling
-use vars qw($opt_n $opt_p $opt_d $opt_f $opt_h $cmdt %pid);
+use vars qw($opt_n $opt_p $opt_d $opt_f $opt_i $opt_h $cmdt %pid);
 my $qr_shell_meta  = qr([`~#\$&*()\[\]\{\}\\|;'"<>?]);
 my $qr_unsafe_file = qr(^-|[\n\t]|$qr_shell_meta);
 my $cmdt_has_shell_meta = 0;
@@ -23,7 +23,7 @@ usage() unless @ARGV;
 
 # -N as *first* arg is shortcut for "-p1 -nN"; do this before calling getopt
 splice @ARGV, 0, 1, "-p1", "-n$1" if ( $ARGV[0] =~ /^-(\d+)$/ );
-getopts('n:p:d:fh');
+getopts('n:p:d:fih');
 usage() if $opt_h;
 
 # ----------------------------------------------------------------------
@@ -47,6 +47,7 @@ if (@ARGV) {
 1 while _wait() >= 0;
 
 # status
+$unsafe_count = 0 if $opt_i;    # user doesn't care!
 _log( 0, "==== $unsafe_count unsafe filenames found ====" ) if $unsafe_count;
 _log( 0, "==== $fail_count jobs failed ====" ) if $fail_count;
 exit( ( $fail_count ? 1 : 0 ) + ( $unsafe_count ? 2 : 0 ) );
@@ -87,7 +88,7 @@ sub batcher {
     if ( defined($arg) ) {
         if ( $arg =~ $qr_unsafe_file ) {
             $unsafe_count++;
-            if ($cmdt_has_shell_meta) {
+            if (not $opt_i and $cmdt_has_shell_meta) {
                 # the command template requires shell, but the argument is not shell safe
                 _log( 0, "rejected: '$arg'" );
                 return;

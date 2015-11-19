@@ -206,6 +206,10 @@ template that is guaranteed to require a shell.  Here are the details:
 
         ... | map ": > /dev/null"
 
+    (NOTE: you can force such files to be accepted for processing by using
+    `-i`.  This option is intentionally NOT shown in the usage message because
+    I want people to read this section before they use it.)
+
 *   If your command template does not have any shell metacharacters, nothing
     is rejected, and the resulting command(s) are run directly from perl in
     "list" mode (see 'perldoc -f exec' etc for details).  This is secure.
