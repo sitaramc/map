@@ -18,6 +18,7 @@ my $qr_unsafe_file      = qr(^-|[\n\t]|$qr_shell_meta);
 my $cmdt_has_shell_meta = 0;
 my $unsafe_count        = 0;
 my $fail_count          = 0;
+my $D                   = $ENV{MAP_D} // ( ( $ENV{D} || 0 ) =~ /^[0-9]$/ ? $ENV{D} : 0 );
 
 usage() unless @ARGV;
 
@@ -174,7 +175,7 @@ sub runner {
 
     my $pid = spawn(@cmd);
     $pid{$pid} = join( " ", @cmd );
-    print STDERR "+" if $opt_p > 1 and not $ENV{D};
+    print STDERR "+" if $opt_p > 1 and not $D;
     _log( 1, "$pid\t" . ( $cmdt_has_shell_meta ? $pid{$pid} : Dumper( \@cmd ) ) );
 }
 
@@ -207,8 +208,8 @@ sub _wait {
     my $pid = wait();
     return $pid if $pid == -1;    # no more processes to wait on
     my $es = $?;
-    print STDERR "-" if $opt_p > 1 and not $ENV{D};
-    return $pid unless $es or $ENV{D};    # nothing to see, nothing asked to show
+    print STDERR "-" if $opt_p > 1 and not $D;
+    return $pid unless $es or $D;    # nothing to see, nothing asked to show
 
     $fail_count++ if $es;
     if ( $es == -1 ) {
@@ -221,7 +222,7 @@ sub _wait {
 
     # you have to show *something*, whether because es != 0 or D != 0.  For D
     # != 0, the command need not be shown; it was already shown when it started
-    _log( 0, "$pid\t$es" . ( $ENV{D} ? "" : "\n\t$pid{$pid}" ) );
+    _log( 0, "$pid\t$es" . ( $D ? "" : "\n\t$pid{$pid}" ) );
     return $pid;
 }
 
@@ -238,7 +239,7 @@ sub gen_ts {
 
 sub _log {
     my ( $lvl, $msg ) = @_;
-    return if $lvl > ( $ENV{D} || 0 );
+    return if $lvl > ( $D || 0 );
     say STDERR gen_ts . $msg;
 }
 

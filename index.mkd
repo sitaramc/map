@@ -109,7 +109,8 @@ specify the actual delimiter (like the `-d:` above).
     short lived jobs.
 
 *   If you want to see what command is *actually* being executed, run it with
-    the environment variable "D" set to 1.
+    the environment variable `D` set to 1.  If your environment uses "D" for
+    something else, you can use `MAP_D` instead.
 
 *   Since many commands don't produce any output for a long time, map has a
     very low-noise way of showing progress:
