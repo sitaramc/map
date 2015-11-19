@@ -141,7 +141,7 @@ sub interpolate {
     # the 0-th element of @argwords is 'dummy', so 1-based indexing works!
     my ( $f, $d, $b, $e ) = split_path($arg);
     my %x = ( '%' => '%', F => $f, D => $d, B => $b, E => $e );
-    $word =~ s/%([FDBE%1-9])/$x{$1} || $argwords[$1]/ge;
+    $word =~ s/%([FDBE%1-9])/exists($x{$1}) ? $x{$1} : $argwords[$1]/ge;
 
     return $word;
 }
