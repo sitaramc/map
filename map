@@ -13,8 +13,8 @@ use Getopt::Std;
 # ----------------------------------------------------------------------
 # constants, globals, and option handling
 use vars qw($opt_n $opt_p $opt_d $opt_f $opt_i $opt_h $cmdt %pid);
-my $qr_shell_meta  = qr([`~#\$&*()\[\]\{\}\\|;'"<>?]);
-my $qr_unsafe_file = qr(^-|[\n\t]|$qr_shell_meta);
+my $qr_shell_meta       = qr([`~#\$&*()\[\]\{\}\\|;'"<>?]);
+my $qr_unsafe_file      = qr(^-|[\n\t]|$qr_shell_meta);
 my $cmdt_has_shell_meta = 0;
 my $unsafe_count        = 0;
 my $fail_count          = 0;
@@ -56,7 +56,7 @@ exit( ( $fail_count ? 1 : 0 ) + ( $unsafe_count ? 2 : 0 ) );
 # setup
 
 sub setup {
-    @ARGV = ($ENV{SHELL}, "-c") unless @ARGV;
+    @ARGV = ( $ENV{SHELL}, "-c" ) unless @ARGV;
 
     if ( -t 0 ) {
         $cmdt = shift @ARGV;
@@ -88,7 +88,7 @@ sub batcher {
     if ( defined($arg) ) {
         if ( $arg =~ $qr_unsafe_file ) {
             $unsafe_count++;
-            if (not $opt_i and $cmdt_has_shell_meta) {
+            if ( not $opt_i and $cmdt_has_shell_meta ) {
                 # the command template requires shell, but the argument is not shell safe
                 _log( 0, "rejected: '$arg'" );
                 return;
