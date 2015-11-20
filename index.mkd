@@ -14,7 +14,8 @@ The major changes from the old "map" command are:
 *   **important**: the meaning of `%%` has changed; please read below.
 *   `-v` replaced by using environment variable "D" to "1".  `-q` no longer
     available.
-*   `-p` defaults to 4, not #CPUs.
+*   `-p` defaults to 4, not #CPUs (but see the section on environment
+    variables later).
 *   Finally, we no longer use 'xargs' to do the actual parallelism; we do it
     natively, in pure perl.
 
@@ -37,6 +38,8 @@ default for max args is either 1 or 100; see later.  As a **convenient
 shortcut**, if the *first* argument is `-1` (in general, `-N` for any integer
 N), this is converted to `-p1 -nN` -- i.e., single-processing, N arguments per
 command.
+
+Note: please also see the section on environment variables for more on this.
 
 Map has only **one replacement string**, the `%` symbol, with some easy to
 remember suffixes.  `%` is the same as `%F`, and stands for the full argument.
@@ -102,15 +105,27 @@ strings `%1` thru `%9`, letting you do things like this:
 In this mode, you can supply `-ds` to mean whitespace, `-dt` to mean tabs, or
 specify the actual delimiter (like the `-d:` above).
 
-# Notes
+# Environment variables
+
+*   If you want to see what command is *actually* being executed, run it with
+    the environment variable `D` set to 1.  If your environment already uses
+    "D" for something else, you can use `MAP_D` instead.
+
+*   The built-in default of "4" for max-procs (`-p`) can be overridden by
+    setting the environment variable `MAP_MAX_PROCS`.  For example, your
+    bashrc may contain:
+
+        # default for -p: half the number of CPUs
+        export MAP_MAX_PROCS=$(( `nproc` / 2 ))
+
+*   The built-in default of "100" for max-args (`-n`) can be overridden by
+    setting the environment variable `MAP_MAX_ARGS`.
+
+# Other notes
 
 *   By default, there's a delay of 0.01 seconds before each fork, to prevent
     "accidents".  Use `-f` (for 'fullspeed') if you are running lots of
     short lived jobs.
-
-*   If you want to see what command is *actually* being executed, run it with
-    the environment variable `D` set to 1.  If your environment uses "D" for
-    something else, you can use `MAP_D` instead.
 
 *   Since many commands don't produce any output for a long time, map has a
     very low-noise way of showing progress:

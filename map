@@ -64,12 +64,12 @@ sub setup {
     } else {
         $cmdt = join( " ", @ARGV ); @ARGV = ();
     }
-    $opt_p ||= 4;
+    $opt_p ||= ( $ENV{MAP_MAX_PROCS} // 4 );
 
     my $count = ( $cmdt =~ s/%/%/g );    # count %s
     $count -= ( ( $cmdt =~ s/%%/%%/g ) * 2 );    # subtract count of %%
     $cmdt .= " %F" unless $count;                # append single %F if needed
-    $opt_n ||= ( $count > 1 ? 1 : 100 );
+    $opt_n ||= ( $count > 1 ? 1 : ( $ENV{MAP_MAX_ARGS} // 100 ) );
 
     # default % is %F unless followed by D/B/E/%/1-9
     $cmdt =~ s/%([FDBE%1-9])|%(.|$)/"%" . ($1 ? $1 : "F$2")/ge;
