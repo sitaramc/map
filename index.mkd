@@ -213,12 +213,11 @@ template that is guaranteed to require a shell.  Here are the details:
     filename, OR starts with a "-".
 
 *   If your command template has shell metacharacters, then files whose names
-    are shell unsafe are rejected, with a message printed to that effect.
-    There is no way that combination will be allowed.  The remaining files are
-    allowed to pass.  **This may be a problem in some cases, where a partial
-    run is not considered to be valid.  YOU HAVE BEEN WARNED.**  If you want
-    to detect such problems before you run your actual command, just run your
-    file list through:
+    are shell unsafe are rejected (but see note below), with a message printed
+    to that effect.  The remaining files are allowed to pass.  **This may be a
+    problem in some cases, where a partial run is not considered to be valid.
+    YOU HAVE BEEN WARNED.**  If you want to detect such problems before you
+    run your actual command, just run your file list through:
 
         ... | map ": > /dev/null"
 
@@ -231,7 +230,7 @@ template that is guaranteed to require a shell.  Here are the details:
     "list" mode (see 'perldoc -f exec' etc for details).  This is secure.
 
     *   **However, note that the direct command you give to map may itself be
-        a shell script.  There is no way for map to detect that, and careless
+        a shell script.  There is no way for map to know that, and careless
         use could lead to the same problems we are trying to catch/prevent.**
         But at least you have some warning from map (see next bullet) if there
         are unsafe files in a directory where you would not normally expect
