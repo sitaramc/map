@@ -28,8 +28,10 @@ in shell.  Clone the [repo](https://github.com/sitaramc/map) or grab just the
 [script](https://raw.githubusercontent.com/sitaramc/map/master/map).  Run `map
 -h` to get some quick help, but be aware that only scratches the surface!
 
-Map is **line-oriented**.  Each input *line* is an argument, not each word
-within a line.
+When used like xargs, map is **line-oriented**; each input *line* is an
+argument, not each word within a line.  When used like a shell loop, arguments
+come from the command line.  There are examples of both kinds later in this
+document.
 
 Map has only **two options**: `-p` (**max procs**, default 4), which says how
 many jobs to run, and keep running, in parallel, and `-n` (**max args**),
@@ -80,8 +82,9 @@ because tar cannot extract more than one archive at a time.  In such cases you
 
     ls *.tar | map -n 1 tar -xf %
 
-Map can take **arguments from the command line** too.  In this case the
-complete actual command must be in quotes:
+Map can take **arguments from the command line** too, if you want a different
+way to execute shell loops.  In this case the complete actual command must be
+in quotes:
 
     map "cp % /tmp" *.tgz
     # same as: ls *.tgz | map cp % /tmp
