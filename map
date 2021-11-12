@@ -175,7 +175,6 @@ sub runner {
 
     my $pid = spawn(@cmd);
     $pid{$pid} = join( " ", @cmd );
-    print STDERR "+" if $opt_p > 1 and not $D;
     _log( 1, "$pid\t" . ( $cmdt_has_shell_meta ? $pid{$pid} : Dumper( \@cmd ) ) );
 }
 
@@ -208,7 +207,6 @@ sub _wait {
     my $pid = wait();
     return $pid if $pid == -1;    # no more processes to wait on
     my $es = $?;
-    print STDERR "-" if $opt_p > 1 and not $D;
     return $pid unless $es or $D;    # nothing to see, nothing asked to show
 
     $fail_count++ if $es;
