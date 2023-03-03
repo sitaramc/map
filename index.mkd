@@ -41,6 +41,12 @@ shortcut**, if the *first* argument is `-1` (in general, `-N` for any integer
 N), this is converted to `-p1 -nN` -- i.e., single-processing, N arguments per
 command.
 
+(As of 2021-11-27, if you're running sequentially (i.e., `-p` is `1`,
+implicitly or explicitly), `map` will emulate `xargs`'s `--open-tty` option,
+allowing you to use, for example, `vim`, as the command to run.  There's no
+option for this; it just happens automatically.  I'll revisit it if there are
+problems.)
+
 Note: please also see the section on environment variables for more on this.
 
 Map has only **one replacement string**, the `%` symbol, with some easy to

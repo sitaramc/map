@@ -115,7 +115,7 @@ sub builder {
     my @out = ();
     for my $word ( ( split ' ', $cmdt ) ) {
         # every word in the command template needs to be examined for %[FDBE1-9]
-        if ( $word !~ /%[FDBE1-9]/ ) {
+        if ( $word !~ /(?<!%)%[FDBE1-9]/ ) {
             # words that don't match are used as is
             $word =~ s/%%/%/g;
             push @out, $word;
@@ -187,6 +187,9 @@ sub spawn {
     my $pid = fork;
     die "fork: $!" unless defined $pid;
     return $pid if $pid;
+
+    # if running only one-at-a-time, let STDIN be /dev/tty, a la `xargs -o`
+    open(STDIN, "<", "/dev/tty") if $opt_p == 1;
 
     if ($cmdt_has_shell_meta) {
         # command *needs* to be run from the shell, since it has meta
